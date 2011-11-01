@@ -7,7 +7,7 @@ ELECT_ID_DICT = {"ohio":2006, "oh":2006, "connecticut":2007, "ct":2007, "mississ
 APIVERSION = '1.1'
 INTERVAL = 60 
 
-botstarttime = time.time()
+bot_start_time = time.time()
 
 def get_state(message):
 	state = ""
@@ -65,6 +65,11 @@ def success_request_reply(response):
 		reply += ", " + location["directions"]
 	return reply
 
+def write_logs(log_data, w):
+	w.write("Log Totals: \tMessages: " + str(log_data["messages"]) + " \tMentions: " + str(log_data["mentions"]) + " \tRepeat Lookups: " + str(log_data["repeat_lookups"]) + "\n")
+	w.write("State Info: \tOhio: " + str(log_data["ohio"] + log_data["oh"]) + " \tMississippi: " + str(log_data["mississippi"] + log_data["ms"]) + " \tPennsylvania: " + str(log_data["pennsylvania"] + log_data["pa"]) + " \tNorth Carolina: " + str(log_data["north carolina"] + log_data["nc"]) + " \tConnecticut: " + str(log_data["connecticut"] + log_data["ct"]) + " \tVirginia: " + str(log_data["virginia"] + log_data["va"]) + "\n")
+	w.write("Errors: \tFollowing Errors: " + str(log_data["following_errors"]) + " \tLookup Errors: " + str(log_data["lookup_errors"]) + " \tState Request Errors: " + str(log_data["state_request_errors"]) + " \tMax Request Errors: " +str(log_data["max_request_errors"]) +  " \tHard Errors: " + str(log_data["hard_errors"]) + "\n") 
+
 w = open("twitterbot.log", "a")
 w.write("**************************************************\n")
 w.write("Bot run started at: " + str(datetime.datetime.now().isoformat()) + "\n")
@@ -80,74 +85,79 @@ following_list = {}
 following = client.GetFriends()
 
 #creating the initial follower list, any successful DM will add the user to this list
-#one distinction used throughout is that Twitter user/message objects are not dictionaries, but can be converted into them if necessary
 for f in following:
 	following_list[f.id] = {}
 	following_list[f.id]["user"] = f
 	following_list[f.id]["query_count"] = 0
 
-lastmentionid = 0
-lastmessageid = 0
+public_mentions = []
+last_mention_id = 0
+last_message_id = 0
 data = {"q":"", "electionid":"", "api_version":APIVERSION}
 total_logs = {"ohio":0, "oh":0, "connecticut":0, "ct":0, "mississippi":0, "ms":0, "north carolina":0, "nc":0, "pennsylvania":0, "pa":0, "virginia":0, "va":0, "messages":0, "mentions":0, "following_errors": 0, "repeat_lookups":0, "hard_errors":0, "lookup_errors":0, "state_request_errors":0, "max_request_errors":0}
+first_pass = True
+cycle_count = 0
 
 while 1:
+	cycle_count += 1
 	start  = time.time()
 	cycle_logs = dict([(k, 0) for (k, v) in total_logs.iteritems()])
-	print cycle_logs
-	mentions = client.GetReplies(since_id=lastmentionid)
+	mentions = client.GetReplies(since_id=last_mention_id)
 	cycle_logs["mentions"] = len(mentions)
 	for m in mentions:
 		userid = m.user.id 
-		if not(userid in following_list):
+		if not(userid in following_list) and m.created_at_in_seconds > bot_start_time:
 			try:
-				print "send DM"
 				client.PostDirectMessage(user=userid,text="Message back with an address in the format 'State Name:Address' (ex. 'Virginia: 11700 lariat ln oakton va 22124') for polling location data")
 				following_list[userid] = {}
 				following_list[userid]["user"] = m.user
 				following_list[userid]["query_count"] = 0
 				client.CreateFriendship(user=userid)	
 			except:
-				print "posting update"
 				try:
-					client.PostUpdate(status="@"+m.user.screen_name+ " Please make sure you are following us and @reply again so we can Direct Message your polling location",in_reply_to_status_id=m.id)
+					if userid not in public_mentions:
+						client.PostUpdate(status="@"+m.user.screen_name+ " Please make sure you are following us and @reply again so we can Direct Message your polling location",in_reply_to_status_id=m.id)
+						public_mentions.append(userid)
 					cycle_logs["following_errors"] += 1
 				except:
 					continue
-		lastmentionid = m.id
+		if m.id > last_mention_id:
+			last_mention_id = m.id
 	followers = client.GetFollowers()
 	for f in followers:
 		userid = f.id
 		if not userid in following_list:
 			try:
+				client.CreateFriendship(user=userid)	
 				client.PostDirectMessage(user=userid,text="Thanks for following. Message with address in the format 'State:Address' (ex.'Virginia:11700 lariat ln oakton va 22124') for polling data")
 				following_list[userid] = {}
-				following_list[userid]["user"] = f.user
+				following_list[userid]["user"] = f
 				following_list[userid]["query_count"] = 0
-				client.CreateFriendship(user=userid)	
 			except:
 				continue
-	if lastmessageid == 0:
-		tempmessages = client.GetDirectMessages()
+	if first_pass:
+		first_pass = False
+		temp_messages = client.GetDirectMessages()
 		messages = []
-		for tm in tempmessages:
-			if tm.created_at_in_seconds > time.time():
+		for tm in temp_messages:
+			if tm.created_at_in_seconds > bot_start_time:
 				messages.append(tm)
+			if tm.id > last_message_id:
+				last_message_id = tm.id
 		cycle_logs["messages"] = len(messages)
-		print "got default messages"
-	else:
-		messages = client.GetDirectMessages(since_id=lastmessageid)
+	elif not first_pass and last_message_id > 0:
+		messages = client.GetDirectMessages(since_id=last_message_id)
 		cycle_logs["messages"] = len(messages)
-		print "got new messages"
 	for m in messages:
-		if (m.sender_id in following_list):
-			following_list[m.sender_id]["query_count"] += 1
-			if following_list[m.sender_id]["query_count"] > 1:
+		sender_id = m.sender_id
+		if (sender_id in following_list):
+			following_list[sender_id]["query_count"] += 1
+			if following_list[sender_id]["query_count"] > 1:
 				cycle_logs["repeat_lookups"] += 1
-			if following_list[m.sender_id]["query_count"] == 7:
+			if following_list[sender_id]["query_count"] == 7:
 				reply = "You have reached the polling lookup limit for today"
 				cycle_logs["max_request_errors"] += 1
-			elif following_list[m.sender_id]["query_count"] < 7:
+			elif following_list[sender_id]["query_count"] < 7:
 				state = get_state(m.text)
 				address = get_address(m.text)
 				if state is None or address is None:
@@ -171,21 +181,23 @@ while 1:
 		try:
 			if len(reply) > 140:
 				reply = reply[:reply[:140].rfind(" ")]
-			if m.id > lastmessageid:
-				lastmessageid = m.id #put this before the message sending, just in case there's an error, want to continue through messages
-			status = client.PostDirectMessage(user=m.sender_id,text=reply)
+			if m.id > last_message_id:
+				last_message_id = m.id #put this before the message sending, just in case there's an error, want to continue through messages
+			status = client.PostDirectMessage(user=sender_id,text=reply)
 		except twitter.TwitterError as err:
 			if err.find("You already said that") >= 0:
 				reply = "Again: " + reply
 				if len(reply) > 140:
 					reply = reply[:reply[:140].rfind(" ")]
 				try:
-					status = client.PostDirectMessage(user=m.sender_id,text=reply)
+					status = client.PostDirectMessage(user=sender_id,text=reply)
 				except:
 					continue
 			else:
 				try:
-					client.PostUpdate(status="@"+m.sender_screen_name+ " message error, make sure you are following us and @reply again for your polling location",in_reply_to_status_id=m.id)
+					if sender_id not in public_mentions:
+						client.PostUpdate(status="@"+m.sender_screen_name+ " message error, make sure you are following us and @reply again for your polling location",in_reply_to_status_id=m.id)
+						public_mentions.append(sender_id)
 					cycle_logs["following_errors"] += 1
 				except:
 					continue
@@ -194,14 +206,17 @@ while 1:
 	for key in total_logs:
 		total_logs[key] += cycle_logs[key]
 	w = open("twitterbot.log", "a")
-	w.write("Log data from at: " + str(datetime.datetime.now().isoformat()) + "\n")
-	w.write("Cycle log data: " + str(cycle_logs) + "\n")
-	w.write("Total log data: " + str(total_logs) + "\n")
-	w.close()
+	w.write("Log data at: " + str(datetime.datetime.now().isoformat()) + "\n")
+	w.write("Cycle Log Data: \n")
+	write_logs(cycle_logs, w)
+	w.write("Total Log Data: \n")
+	write_logs(total_logs, w)
 	end = time.time()
-	processtime = end-start
-	print processtime
-	pause = INTERVAL - processtime
-	print pause
+	process_time = end - start
+	pause = INTERVAL - process_time
+	cycle_time = "Cycle: " + str(cycle_count) + " \tProcess Time: " + str(process_time) + " \tPause Time: " + str(pause) + "\n"
+	w.write(cycle_time)
+	w.close()
+	print cycle_time
 	if pause > 0:
 		time.sleep(pause)
