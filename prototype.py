@@ -2,6 +2,8 @@
 #every 60 seconds, or could have it make the calls every 60 seconds if the timer has not yet expired, this is more manual and ugly code-wise, but prevents possible overlapping calls to users
 import datetime, time, twitter, urllib, urllib2, json
 
+#TODO: Test against crazy bad characters
+
 BASEURL = "https://pollinglocation.googleapis.com/?"
 ELECT_ID_DICT = {"ohio":2006, "oh":2006, "connecticut":2007, "ct":2007, "mississippi":2009, "ms":2009, "north carolina":2002, "nc":2002, "pennsylvania":2008, "pa":2008, "virginia":2010, "va":2010}
 APIVERSION = '1.1'
@@ -34,12 +36,13 @@ def get_address(message):
 
 def bad_request_reply(response):
 	reply = "Could not find polling location for this address"
-	if "where_to_vote" in response["stateInfo"]:
-		reply += ". Check " + response["stateInfo"]["where_to_vote"] + " for polling location information"
-	elif "election_website" in response["stateInfo"]:
-		reply += ". Check " + response["stateInfo"]["election_website"] + " for polling location information"
+	if "stateInfo" in response:
+		if "where_to_vote" in response["stateInfo"]:
+			reply += ". Check " + response["stateInfo"]["where_to_vote"] + " for polling location information"
+		elif "election_website" in response["stateInfo"]:
+			reply += ". Check " + response["stateInfo"]["election_website"] + " for polling location information"
 	if len(reply) > 140:
-		reply = "Missing polling info,see " + reply[56:]
+		reply = "Missing info, check " + reply[56:]
 	return reply
 
 def success_request_reply(response):
@@ -148,6 +151,8 @@ while 1:
 	elif not first_pass and last_message_id > 0:
 		messages = client.GetDirectMessages(since_id=last_message_id)
 		cycle_logs["messages"] = len(messages)
+		print "Messages: " + str(len(messages))
+		
 	for m in messages:
 		sender_id = m.sender_id
 		if (sender_id in following_list):
@@ -169,15 +174,15 @@ while 1:
 					data["electionid"] = ELECT_ID_DICT[state.lower()]
 					edata = urllib.urlencode(data)
 					response = json.load(urllib2.urlopen(BASEURL+edata))
-					if response["status"] != "SUCCESS" or not "locations" in response:
-						reply = bad_request_reply(response)
-						cycle_logs["lookup_errors"] += 1
-					else:
-						if len(response["locations"]) == 0:
+					if response["status"] != "SUCCESS" or not "locations" in response or len(response["locations"]) == 0:
+						if "stateInfo" in response and (state != response["stateInfo"]["state_long"].lower() and state != response["stateInfo"]["state_abbr"].lower()):
 							reply = "Error looking up polling location"
 							cycle_logs["hard_errors"] += 1
 						else:
-							reply = success_request_reply(response)			
+							reply = bad_request_reply(response)
+							cycle_logs["lookup_errors"] += 1
+					else:
+						reply = success_request_reply(response)			
 		try:
 			if len(reply) > 140:
 				reply = reply[:reply[:140].rfind(" ")]
@@ -185,8 +190,10 @@ while 1:
 				last_message_id = m.id #put this before the message sending, just in case there's an error, want to continue through messages
 			status = client.PostDirectMessage(user=sender_id,text=reply)
 		except twitter.TwitterError as err:
-			if err.find("You already said that") >= 0:
+			if str(err).find("You already said that") >= 0:
 				reply = "Again: " + reply
+				if reply.find("Missing info") >= 0:
+					reply = "Again: missing polling location info, check you state administrator's website for more info"
 				if len(reply) > 140:
 					reply = reply[:reply[:140].rfind(" ")]
 				try:
