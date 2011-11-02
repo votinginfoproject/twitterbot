@@ -2,8 +2,6 @@
 #every 60 seconds, or could have it make the calls every 60 seconds if the timer has not yet expired, this is more manual and ugly code-wise, but prevents possible overlapping calls to users
 import datetime, time, twitter, urllib, urllib2, json
 
-#TODO: Test against crazy bad characters
-
 BASEURL = "https://pollinglocation.googleapis.com/?"
 ELECT_ID_DICT = {"ohio":2006, "oh":2006, "connecticut":2007, "ct":2007, "mississippi":2009, "ms":2009, "north carolina":2002, "nc":2002, "pennsylvania":2008, "pa":2008, "virginia":2010, "va":2010}
 APIVERSION = '1.1'

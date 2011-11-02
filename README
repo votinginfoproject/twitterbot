@@ -1,0 +1,23 @@
+Description:
+
+Twitter bot for the Google Election API that accepts Direct Messages from users and returns polling location information
+
+Requirements:
+
+python-twitter
+twitter app with full account priveledges to obtain consumer_key, consumer_secret, access_token_key, and access_token_secret
+
+Functionality:
+
+When running, the bot will first obtain the current time in second since the epoch and will then pull a list of users it is following to store locally. Then it starts the cycles.
+
+Each cycle contains a few parts:
+
+First the bot will search for all new mentions, and for each mention will attempt to send the person a direct message telling them to message back with an address to obtain their polling location information. If the user mentioned but is not following, it makes a public status update telling the user to follow if they want polling info
+
+Next the bot gets a list of it's followers. For each follower, it checks if they are in the following_list and if not, it starts following the user and them sends them a Direct Message informing them that they can request their polling info from the bot through a Direct Message
+
+After that, the bot pulls a list of recent messages and attempts lookups using the google election center api for each of them if they are using a valid state. It will then return either polling location information, a statement saying the address could not be found, or an error response if something is seriously wrong with the address/response combination.
+
+Finally, the cycle will report out all the log information from the cycle and total information, including time data, error counts, and state lookup counts, and will then pause to wait for the next cycle.
+
