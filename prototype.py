@@ -94,8 +94,7 @@ def main():
 		following = []
 		following = client.GetFriends()
 	except:
-		continue
-
+		pass
 	#creating the initial follower list, any successful DM will add the user to this list
 	for f in following:
 		following_list[f.id] = {}
@@ -118,7 +117,7 @@ def main():
 			mentions = []
 			mentions = client.GetReplies(since_id=last_mention_id)
 		except:
-			continue
+			pass	
 		cycle_logs["mentions"] = len(mentions)
 		for m in mentions:
 			userid = m.user.id 
@@ -136,14 +135,14 @@ def main():
 							public_mentions.append(userid)
 						cycle_logs["following_errors"] += 1
 					except:
-						continue
+						pass	
 			if m.id > last_mention_id:
 				last_mention_id = m.id
 		try:
 			followers = []
 			followers = client.GetFollowers()
 		except:
-			continue
+			pass	
 		for f in followers:
 			userid = f.id
 			if not userid in following_list:
@@ -154,14 +153,14 @@ def main():
 					following_list[userid]["user"] = f
 					following_list[userid]["query_count"] = 0
 				except:
-					continue
+					pass
 		if first_pass:
 			first_pass = False
 			try:
 				temp_messages = []
 				temp_messages = client.GetDirectMessages()
 			except:
-				continue
+				pass
 			messages = []
 			for tm in temp_messages:
 				if tm.created_at_in_seconds > bot_start_time:
@@ -174,7 +173,7 @@ def main():
 				messages = []
 				messages = client.GetDirectMessages(since_id=last_message_id)
 			except:
-				continue
+				pass
 			cycle_logs["messages"] = len(messages)
 		
 		for m in messages:
@@ -223,7 +222,7 @@ def main():
 					try:
 						status = client.PostDirectMessage(user=sender_id,text=reply)
 					except:
-						continue
+						pass
 				else:
 					try:
 						if sender_id not in public_mentions:
@@ -231,9 +230,9 @@ def main():
 							public_mentions.append(sender_id)
 						cycle_logs["following_errors"] += 1
 					except:
-						continue
+						pass
 			except:
-				continue
+				pass
 		for key in total_logs:
 			total_logs[key] += cycle_logs[key]
 		w = open("twitterbot.log", "a")
