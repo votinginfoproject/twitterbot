@@ -39,9 +39,9 @@ def get_address(message):
 def bad_request_reply(response):
 	reply = "Could not find polling location for this address"
 	if "stateInfo" in response:
-		if "where_to_vote" in response["stateInfo"]:
+		if "where_to_vote" in response["stateInfo"] and len(response["stateInfo"]["where_to_vote"]) > 0:
 			reply += ". Check " + response["stateInfo"]["where_to_vote"] + " for polling location information"
-		elif "election_website" in response["stateInfo"]:
+		elif "election_website" in response["stateInfo"] and len(response["stateInfo"]["election_website"]) > 0:
 			reply += ". Check " + response["stateInfo"]["election_website"] + " for polling location information"
 	if len(reply) > 140:
 		reply = "Missing info, check " + reply[56:]
@@ -50,23 +50,23 @@ def bad_request_reply(response):
 def success_request_reply(response):
 	reply = ""
 	location = response["locations"][0]
-	if "polling_hours" in location:
+	if "polling_hours" in location and len(location["polling_hours"]) > 0:
 		reply += str(location["polling_hours"]) + " at"
-	if "address" in location:
+	if "address" in location and len(location["address"]) > 0:
 		address = location["address"]
-		if "location_name" in address:
+		if "location_name" in address and len(address["location_name"]) > 0:
 			reply += " " + address["location_name"]
-		if "line1" in address:
+		if "line1" in address and len(address["line1"]) > 0:
 			reply += " " + address["line1"]
-		if "line2" in address:
+		if "line2" in address and len(address["line2"]) > 0:
 			reply += " " + address["line2"]
-		if "city" in address:
+		if "city" in address and len(address["city"]) > 0:
 			reply += " " + address["city"]
-		if "state" in address:
+		if "state" in address and len(address["state"]) > 0:
 			reply += " " + address["state"]
-		if "zip" in address:
+		if "zip" in address and len(address["zip"]) > 0:
 			reply += " " + address["zip"][:5]
-	if "directions" in location:
+	if "directions" in location and len(location["directions"]) > 0:
 		reply += ", " + location["directions"]
 	return reply
 
