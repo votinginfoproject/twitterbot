@@ -209,6 +209,8 @@ def main():
 			try:
 				if len(reply) > 140:
 					reply = reply[:reply[:140].rfind(" ")]
+				if reply.rfind(",") > (len(reply) - 4):
+					reply = reply[:reply.rfind(",")]
 				if m.id > last_message_id:
 					last_message_id = m.id #put this before the message sending, just in case there's an error, want to continue through messages
 				status = client.PostDirectMessage(user=sender_id,text=reply)
@@ -219,6 +221,8 @@ def main():
 						reply = "Again: missing polling location info, check you state administrator's website for more info"
 					if len(reply) > 140:
 						reply = reply[:reply[:140].rfind(" ")]
+					if reply.rfind(",") > (len(reply) - 4):
+						reply = reply[:reply.rfind(",")]
 					try:
 						status = client.PostDirectMessage(user=sender_id,text=reply)
 					except:
