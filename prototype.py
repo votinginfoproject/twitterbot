@@ -7,7 +7,7 @@ from os import fork, chdir, setsid, umask
 import os
 from sys import exit
 
-#TODO:Hardcore in admin websites
+#TODO:Hardcore in admin websites?
 
 BASEURL = "https://pollinglocation.googleapis.com/?"
 ELECT_ID_DICT = {"ohio":2006, "oh":2006, "connecticut":2007, "ct":2007, "mississippi":2009, "ms":2009, "north carolina":2002, "nc":2002, "pennsylvania":2008, "pa":2008, "virginia":2010, "va":2010}
@@ -27,7 +27,6 @@ def get_state(message):
 		state = ''.join([c for c in state.split(" ")[0].lower() if c.isalpha()]) + " " + ''.join([c for c in state.split(" ")[1].lower() if c.isalpha()])
 	else:
 		state = ''.join([c for c in state.lower() if c.isalpha()])
-	print state
 	if state in ELECT_ID_DICT:
 		return state
 	return None
@@ -124,16 +123,13 @@ def main():
 		cycle_logs = dict([(k, 0) for (k, v) in total_logs.iteritems()])
 		try:
 			following = client.GetFriendIDs()
-			print following
 		except:
 			pass
 		if len(following) > 0 and "ids" in following:
 			for following_id in following["ids"]:
 				if following_id in to_follow:
-					print following_id
-					print to_follow
 					try:
-						client.PostDirectMessage(user=following_id,text="Message back with an address in the format 'State Name:Address' (ex. 'Virginia: 11700 Lariat Ln Oakton VA 22124') for polling location data")
+						client.PostDirectMessage(user=following_id,text="Message back with an address in the format 'State Name:Address' (ex. 'Virginia:11700 Lariat Ln, Oakton, VA 22124') for polling location data")
 						following_list[following_id] = {}
 						following_list[following_id]["user"] = to_follow.pop(following_id)
 						following_list[following_id]["query_count"] = 0
@@ -172,7 +168,6 @@ def main():
 				try:
 					client.CreateFriendship(user=userid)	
 					to_follow[userid] = f
-					print to_follow
 				except:
 					pass
 		if first_pass:
