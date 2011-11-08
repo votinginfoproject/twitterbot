@@ -7,11 +7,13 @@ from os import fork, chdir, setsid, umask
 import os
 from sys import exit
 
+#TODO:Hardcore in admin websites
+
 BASEURL = "https://pollinglocation.googleapis.com/?"
 ELECT_ID_DICT = {"ohio":2006, "oh":2006, "connecticut":2007, "ct":2007, "mississippi":2009, "ms":2009, "north carolina":2002, "nc":2002, "pennsylvania":2008, "pa":2008, "virginia":2010, "va":2010}
+POLLING_HOURS = {"OH":"6:30am - 7:30pm", "VA":"6am - 7pm", "CT":"6am - 8pm", "MS":"7am - 7pm", "NC":"6:30am - 7:30pm", "PA":"7am - 8pm"}
 APIVERSION = '1.1'
 INTERVAL = 60 
-
 
 def get_state(message):
 	state = ""
@@ -21,7 +23,11 @@ def get_state(message):
 		state = message.split(",")[0]
 	elif message.find(" ") >= 0:
 		state = message.split(" ")[0]
-	state = ''.join([c for c in state.lower() if c.isalpha()])
+	if state.find(" ") >= 0:
+		state = ''.join([c for c in state.split(" ")[0].lower() if c.isalpha()]) + " " + ''.join([c for c in state.split(" ")[1].lower() if c.isalpha()])
+	else:
+		state = ''.join([c for c in state.lower() if c.isalpha()])
+	print state
 	if state in ELECT_ID_DICT:
 		return state
 	return None
@@ -50,8 +56,10 @@ def bad_request_reply(response):
 def success_request_reply(response):
 	reply = ""
 	location = response["locations"][0]
-	if "polling_hours" in location and len(location["polling_hours"]) > 0:
+	if "polling_hours" in location and len(location["polling_hours"]) > 0 and location["polling_hours"].find("00:00") < 0:
 		reply += str(location["polling_hours"]) + " at"
+	elif "address" in location and "state" in location["address"]:
+		reply += str(POLLING_HOURS[location["address"]["state"].upper()]) + " at"
 	if "address" in location and len(location["address"]) > 0:
 		address = location["address"]
 		if "location_name" in address and len(address["location_name"]) > 0:
@@ -63,7 +71,7 @@ def success_request_reply(response):
 		if "city" in address and len(address["city"]) > 0:
 			reply += " " + address["city"]
 		if "state" in address and len(address["state"]) > 0:
-			reply += " " + address["state"]
+			reply += ", " + address["state"]
 		if "zip" in address and len(address["zip"]) > 0:
 			reply += " " + address["zip"][:5]
 	if "directions" in location and len(location["directions"]) > 0:
@@ -102,6 +110,7 @@ def main():
 		following_list[f.id]["query_count"] = 0
 
 	public_mentions = []
+	to_follow = {} #deal with latency issues
 	last_mention_id = 0
 	last_message_id = 0
 	data = {"q":"", "electionid":"", "api_version":APIVERSION}
@@ -114,6 +123,29 @@ def main():
 		start  = time.time()
 		cycle_logs = dict([(k, 0) for (k, v) in total_logs.iteritems()])
 		try:
+			following = client.GetFriendIDs()
+			print following
+		except:
+			pass
+		if len(following) > 0 and "ids" in following:
+			for following_id in following["ids"]:
+				if following_id in to_follow:
+					print following_id
+					print to_follow
+					try:
+						client.PostDirectMessage(user=following_id,text="Message back with an address in the format 'State Name:Address' (ex. 'Virginia: 11700 Lariat Ln Oakton VA 22124') for polling location data")
+						following_list[following_id] = {}
+						following_list[following_id]["user"] = to_follow.pop(following_id)
+						following_list[following_id]["query_count"] = 0
+					except:
+						try:
+							if following_id not in public_mentions:
+								client.PostUpdate(status="@"+to_follow[following_id].user.screen_name+ " Please make sure you are following us and @reply again so we can Direct Message your polling location")
+								public_mentions.append(following_id)
+							cycle_logs["following_errors"] += 1
+						except:
+							pass
+		try:
 			mentions = []
 			mentions = client.GetReplies(since_id=last_mention_id)
 		except:
@@ -123,19 +155,10 @@ def main():
 			userid = m.user.id 
 			if not(userid in following_list) and m.created_at_in_seconds > bot_start_time:
 				try:
-					client.PostDirectMessage(user=userid,text="Message back with an address in the format 'State Name:Address' (ex. 'Virginia: 11700 lariat ln oakton va 22124') for polling location data")
-					following_list[userid] = {}
-					following_list[userid]["user"] = m.user
-					following_list[userid]["query_count"] = 0
-					client.CreateFriendship(user=userid)	
+					client.CreateFriendship(user=userid)
+					to_follow[userid] = m.user	
 				except:
-					try:
-						if userid not in public_mentions:
-							client.PostUpdate(status="@"+m.user.screen_name+ " Please make sure you are following us and @reply again so we can Direct Message your polling location",in_reply_to_status_id=m.id)
-							public_mentions.append(userid)
-						cycle_logs["following_errors"] += 1
-					except:
-						pass	
+					pass
 			if m.id > last_mention_id:
 				last_mention_id = m.id
 		try:
@@ -148,10 +171,8 @@ def main():
 			if not userid in following_list:
 				try:
 					client.CreateFriendship(user=userid)	
-					client.PostDirectMessage(user=userid,text="Thanks for following. Message with address in the format 'State:Address' (ex.'Virginia:11700 lariat ln oakton va 22124') for polling data")
-					following_list[userid] = {}
-					following_list[userid]["user"] = f
-					following_list[userid]["query_count"] = 0
+					to_follow[userid] = f
+					print to_follow
 				except:
 					pass
 		if first_pass:
