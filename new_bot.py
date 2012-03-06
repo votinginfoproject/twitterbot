@@ -1,22 +1,27 @@
 import twitter
 import bitly_api
+import time
+import urllib
+import urllib2
+import json
+import datetime
 
-#maybe use bit.ly for the admin links so that we can send a longer message
-#also, need to standardize the state stuff - convert everything to two letter abbreviations or state names
-
+QUERY_LIMIT = 5
 FOLLOWER_TYPE = "followers"
 FOLLOWING_TYPE = "following"
 STARTING_CURSOR = -1
 REPLIES = {"limit_error":"",
-		"state_error":"",}
+		"state_error":"Supported states include VA, MS, and OH. If you entered one of the states, please check spelling and send address in the format 'State:Address' and try again",}
 API_VERSION = "1.1"
+BASEURL = "https://pollinglocation.googleapis.com/?"
 NAME_TO_ABBREV = {'VERMONT': 'VT', 'GEORGIA': 'GA', 'IOWA': 'IA', 'GUAM': 'GU', 'KANSAS': 'KS', 'FLORIDA': 'FL', 'VIRGINIA': 'VA', 'NORTH CAROLINA': 'NC', 'ALASKA': 'AK', 'NEW YORK': 'NY', 'CALIFORNIA': 'CA', 'ALABAMA': 'AL', 'TEXAS': 'TX', 'FEDERATED STATES OF MICRONESIA': 'FM', 'IDAHO': 'ID', 'ARMED FORCES AMERICAS': 'AA', 'DELAWARE': 'DE', 'HAWAII': 'HI', 'ILLINOIS': 'IL', 'CONNECTICUT': 'CT', 'DISTRICT OF COLUMBIA': 'DC', 'MISSOURI': 'MO', 'NEW MEXICO': 'NM', 'PUERTO RICO': 'PR', 'OHIO': 'OH', 'MARYLAND': 'MD', 'ARKANSAS': 'AR', 'MASSACHUSETTS': 'MA', 'SOUTH DAKOTA': 'SD', 'TENNESSEE': 'TN', 'PALAU': 'PW', 'COLORADO': 'CO', 'ARMED FORCES MIDDLE EAST': 'AE', 'NEW JERSEY': 'NJ', 'UTAH': 'UT', 'MICHIGAN': 'MI', 'WYOMING': 'WY', 'WASHINGTON': 'WA', 'MINNESOTA': 'MN', 'OREGON': 'OR', 'AMERICAN SAMOA': 'AS', 'VIRGIN ISLANDS': 'VI', 'MARSHALL ISLANDS': 'MH', 'ARMED FORCES PACIFIC': 'AP', 'SOUTH CAROLINA': 'SC', 'INDIANA': 'IN', 'NEVADA': 'NV', 'LOUISIANA': 'LA', 'NORTHERN MARIANA ISLANDS': 'MP', 'ARIZONA': 'AZ', 'WISCONSIN': 'WI', 'NORTH DAKOTA': 'ND', 'MONTANA': 'MT', 'PENNSYLVANIA': 'PA', 'OKLAHOMA': 'OK', 'KENTUCKY': 'KY', 'RHODE ISLAND': 'RI', 'MISSISSIPPI': 'MS', 'NEBRASKA': 'NE', 'NEW HAMPSHIRE': 'NH', 'WEST VIRGINIA': 'WV', 'MAINE': 'ME'}
-ELECTION_IDS = {"OH":2006, "CT":2007, "MS":2009, "NC":2002, "PA":2008, "VA":2010}
+ELECTION_IDS = {"OH":2110, "MS":2111, "VA":2109}
 
-client = twitter.Api(consumer_key='<consumer_key>', consumer_secret='<consumer_secret>',access_token_key='<access_token_key>',access_token_secret='<access_token_secret>')
-bit = bitly_api.Connection('<bitly_username>', '<bitly_oauth_token>')
+client = twitter.Api(consumer_key='', consumer_secret='',access_token_key='',access_token_secret='')
+bit = bitly_api.Connection('', '')
 
 last_message_id = 0 #the logs should output the last message id and then the bot should have a parameter for last_message_id on start up that we can use in case the bot shuts down so that we can start it up again right where it left off
+#TODO: More debugging an logging
 
 def get_ids(id_type, cursor=-1):
 	ids = []
@@ -63,8 +68,6 @@ def get_old_messages():
 		except twitter.TwitterError as err: 
 			if str(err).find("Capacity Error") < 0: # if error is not a capacity error, then break out of the while loop
 				break
-		else: # any other errors = also break
-			break	
 		
 	for m in messages:
 		if m.id > last_id:
@@ -94,10 +97,12 @@ def check_reply(reply):
 def send_response(sender_id, reply):
 	success = False
 	reply = check_reply(reply)
-
+	
+	print "about to send: " + reply
 	while not success:
 		try:
 			status = client.PostDirectMessage(user=sender_id,text=reply)
+			print "sent successfully"
 			success = True
 		except twitter.TwitterError as err:
 			if str(err).find("You already said that") >= 0:
@@ -125,12 +130,12 @@ def get_state_address(message):
 	return state, address		
 
 def access_google_api(address, election_id):
-	request = {"api_version":APIVERSION, "q":address, "electionid":election_id}
+	request = {"api_version":API_VERSION, "q":address, "electionid":election_id}
 	edata = urllib.urlencode(request)
 	return json.load(urllib2.urlopen(BASEURL+edata))
 
 def valid_response(response):
-	return (response["status"] == "SUCCESS" and "locations" in response and len(response["locations"]) == 0)
+	return (response["status"] == "SUCCESS" and "locations" in response and len(response["locations"]) >= 0)
 
 def bad_request_reply(response):
 	if "stateInfo" in response and state == response["stateInfo"]["state_abbr"].upper():
@@ -169,18 +174,26 @@ def success_request_reply(response):
 		reply += ", " + location["directions"]
 	return reply
 
-
 old_follower_ids = get_ids(FOLLOWER_TYPE, STARTING_CURSOR)
 old_following_ids = get_ids(FOLLOWING_TYPE, STARTING_CURSOR)
 messages = []
+first_pass = True
+cycle_count = 0
+messengers = {}
+public_mentions = []
+
 
 while 1:
+	
+	start = time.time()
+	cycle_count += 1
 
 	follower_ids = get_new_ids(old_follower_ids, FOLLOWER_TYPE, STARTING_CURSOR)
 	following_ids = get_new_ids(old_following_ids, FOLLOWING_TYPE, STARTING_CURSOR)
 
 	if first_pass:
 		last_message_id = get_old_messages()
+		first_pass = False
 	else:
 		messages = get_new_messages()
 
@@ -191,12 +204,19 @@ while 1:
 			if sender_id in messengers and messengers[sender_id]["query_count"] >= QUERY_LIMIT:
 				if messengers[sender_id]["query_count"] == QUERY_LIMIT:
 					send_response(sender_id, REPLIES["limit_error"])
+					messengers[sender_id]["query_count"] += 1
 			else:
+				if sender_id in messengers:
+					messengers[sender_id]["query_count"] += 1
+				else:
+					messengers[sender_id] = {}
+					messengers[sender_id]["query_count"] = 1
 				state, address = get_state_address(m.text)
 				if state not in ELECTION_IDS or len(address) == 0:
 					send_response(sender_id, REPLIES["state_error"])
 				else:
 					response = access_google_api(address, ELECTION_IDS[state])
+					print response
 					if valid_response(response):
 						send_response(sender_id, success_reply(response))
 					else:
@@ -204,12 +224,19 @@ while 1:
 		elif sender_id not in public_mentions:	
 			try:
 				client.PostUpdate(status="@"+m.sender_screen_name+REPLIES["message_error"],in_reply_to_status_id=m.id)
+				public_mentions.append(sender_id)
 			except:
 				pass
 		if message_id > last_message_id:
 				last_message_id = message_id
+	
+	end = time.time()
+	process_time = end - start
+	pause = 20 - process_time
+	cycle_time = "Cycle: " + str(cycle_count) + " \tProcess Time: " + str(process_time) + " \tPause Time: " + str(pause) + "\n"
+	print cycle_time
+	if pause > 0:
+		time.sleep(pause)
 
 print "Followers: " + str(len(follower_ids))
 print "Following: " + str(len(following_ids))
-
-print "Diff list: " + str(diff_list)
